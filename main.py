@@ -45,7 +45,7 @@ class RecallCancelPlugin(Star):
             self.pending_llm_requests[message_id] = {
                 "session_id": event.unified_msg_origin,
                 "event": event,
-                "timestamp": asyncio.get_event_loop().time(),
+                "timestamp": asyncio.get_running_loop().time(),
                 "cancelled": False,
             }
             logger.debug(f"记录LLM请求: {message_id} - {event.unified_msg_origin}")
@@ -110,38 +110,30 @@ class RecallCancelPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
     async def handle_recall_event(self, event: AstrMessageEvent):
         """处理消息撤回事件（OneBot V11标准）"""
-        # 检查是否是通知类事件
         raw_message = event.message_obj.raw_message
-        if not hasattr(raw_message, "__getitem__"):
+        if not hasattr(raw_message, "__getitem__") and not hasattr(
+            raw_message, "post_type"
+        ):
             return
 
         try:
-            # 尝试从不同来源获取事件信息
-            post_type = None
-            notice_type = None
-            message_id = None
+            # 统一处理不同格式的 raw_message，兼容字典和对象属性访问
+            def get_value(obj, key, default=None):
+                """统一获取值的方法，兼容字典和对象属性"""
+                try:
+                    if hasattr(obj, "__getitem__"):
+                        return obj[key]  # type: ignore
+                except (KeyError, TypeError):
+                    pass
+                return getattr(obj, key, default)
 
-            # 尝试作为字典访问
-            try:
-                # 使用类型忽略来处理类型检查问题
-                post_type = raw_message["post_type"]  # type: ignore
-                notice_type = raw_message["notice_type"]  # type: ignore
-                message_id = raw_message["message_id"]  # type: ignore
-                logger.debug(
-                    f"检测到事件: post_type={post_type}, notice_type={notice_type}, message_id={message_id}"
-                )
-            except (KeyError, TypeError, AttributeError):
-                pass
+            post_type = get_value(raw_message, "post_type")
+            notice_type = get_value(raw_message, "notice_type")
+            message_id = get_value(raw_message, "message_id")
 
-            # 如果字典访问失败，尝试作为对象属性访问
-            if post_type is None:
-                post_type = getattr(raw_message, "post_type", None)
-                notice_type = getattr(raw_message, "notice_type", None)
-                message_id = getattr(raw_message, "message_id", None)
-                if post_type:
-                    logger.debug(
-                        f"通过属性访问检测到事件: post_type={post_type}, notice_type={notice_type}, message_id={message_id}"
-                    )
+            logger.debug(
+                f"检测到事件: post_type={post_type}, notice_type={notice_type}, message_id={message_id}"
+            )
 
             # 检查是否是群消息撤回或好友消息撤回事件
             if post_type == "notice" and notice_type in [
@@ -172,8 +164,9 @@ class RecallCancelPlugin(Star):
 
                 # 阻止此撤回事件继续传播
                 event.stop_event()
-        except (KeyError, TypeError, AttributeError):
-            # 不是撤回事件，忽略
+        except Exception as e:
+            # 记录异常信息以便调试，但不阻断处理流程
+            logger.debug(f"处理撤回事件时出现异常: {e}")
             pass
 
     async def _cleanup_expired_records(self):
@@ -181,11 +174,11 @@ class RecallCancelPlugin(Star):
         while True:
             try:
                 await asyncio.sleep(300)  # 每5分钟清理一次
-                current_time = asyncio.get_event_loop().time()
+                current_time = asyncio.get_running_loop().time()
 
                 # 清理超过10分钟的LLM请求记录
                 expired_requests = []
-                for msg_id, info in self.pending_llm_requests.items():
+                for msg_id, info in list(self.pending_llm_requests.items()):
                     if current_time - info["timestamp"] > 600:  # 10分钟
                         expired_requests.append(msg_id)
 
