@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Set, Any
+from typing import Dict, Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
@@ -23,9 +23,6 @@ class RecallCancelPlugin(Star):
 
         # 存储正在处理的LLM请求：message_id -> session_info
         self.pending_llm_requests: Dict[str, Dict[str, Any]] = {}
-
-        # 存储已撤回的消息ID
-        self.recalled_messages: Set[str] = set()
 
         # 清理任务
         self.cleanup_task = None
@@ -90,11 +87,9 @@ class RecallCancelPlugin(Star):
     async def show_status(self, event: AstrMessageEvent):
         """显示插件状态 - 用于调试"""
         pending_count = len(self.pending_llm_requests)
-        recalled_count = len(self.recalled_messages)
 
         status_msg = "📊 撤回取消插件状态:\n"
         status_msg += f"🔄 待处理LLM请求: {pending_count}\n"
-        status_msg += f"🚫 已撤回消息: {recalled_count}\n"
         status_msg += f"🔧 清理任务: {'运行中' if self.cleanup_task and not self.cleanup_task.done() else '已停止'}"
 
         if pending_count > 0:
@@ -111,10 +106,6 @@ class RecallCancelPlugin(Star):
     async def handle_recall_event(self, event: AstrMessageEvent):
         """处理消息撤回事件（OneBot V11标准）"""
         raw_message = event.message_obj.raw_message
-        if not hasattr(raw_message, "__getitem__") and not hasattr(
-            raw_message, "post_type"
-        ):
-            return
 
         try:
             # 统一处理不同格式的 raw_message，兼容字典和对象属性访问
@@ -146,7 +137,6 @@ class RecallCancelPlugin(Star):
                     return
 
                 recalled_message_id = str(message_id)
-                self.recalled_messages.add(recalled_message_id)
                 logger.info(f"检测到消息撤回: {recalled_message_id}")
 
                 # 检查是否有对应的LLM请求正在处理
@@ -186,15 +176,6 @@ class RecallCancelPlugin(Star):
                     del self.pending_llm_requests[msg_id]
                     logger.debug(f"清理过期LLM请求记录: {msg_id}")
 
-                # 清理超过30分钟的撤回记录（防止内存泄漏）
-                if len(self.recalled_messages) > 1000:
-                    # 如果撤回记录太多，清理一半（简单的FIFO策略）
-                    recalled_list = list(self.recalled_messages)
-                    self.recalled_messages = set(
-                        recalled_list[len(recalled_list) // 2 :]
-                    )
-                    logger.debug("清理过期撤回记录")
-
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -210,7 +191,6 @@ class RecallCancelPlugin(Star):
                 pass
 
         self.pending_llm_requests.clear()
-        self.recalled_messages.clear()
         logger.info("RecallCancelPlugin 已卸载")
 
 
