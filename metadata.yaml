@@ -1,0 +1,4 @@
+name: astrbot_plugin_recall_cancel
+desc: 当用户撤回触发LLM回应的消息时，如果LLM回复还未发送则取消发送
+author: 木有知
+version: v1.0.0
