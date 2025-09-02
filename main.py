@@ -8,7 +8,7 @@ from astrbot.api.star import Context, Star, register
 @register(
     "astrbot_plugin_recall_cancel",
     "木有知",
-    "当用户撤回触发LLM回应的消息时，如果LLM回复还未发送则取消发送",
+    "当用户撤回触发LLM回应的消息时，如果LLM回复还未发送则取消发送。防止用户发错消息撤回后机器人仍然回复的情况，提升用户体验并避免资源浪费。",
     "v1.0.0",
 )
 class RecallCancelPlugin(Star):
