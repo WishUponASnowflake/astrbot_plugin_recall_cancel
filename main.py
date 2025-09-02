@@ -63,9 +63,9 @@ class RecallCancelPlugin(Star):
                 del self.pending_llm_requests[message_id]
                 return
 
-            # 移除已完成的请求记录
-            del self.pending_llm_requests[message_id]
-            logger.debug(f"移除已完成的LLM请求记录: {message_id}")
+            # 不要在这里删除记录，因为消息还未发送
+            # 记录的清理应该在消息真正发送后进行
+            logger.debug(f"LLM响应已生成，等待发送: {message_id}")
 
     @filter.on_decorating_result(priority=1)
     async def check_before_send(self, event: AstrMessageEvent):
@@ -148,28 +148,30 @@ class RecallCancelPlugin(Star):
                 "group_recall",
                 "friend_recall",
             ]:
-                recalled_message_id = str(message_id or "")
-                if recalled_message_id:
-                    self.recalled_messages.add(recalled_message_id)
-                    logger.info(f"检测到消息撤回: {recalled_message_id}")
+                # 直接检查 message_id 是否有效
+                if not message_id:
+                    logger.debug("撤回事件中的message_id无效，忽略")
+                    return
 
-                    # 检查是否有对应的LLM请求正在处理
-                    if recalled_message_id in self.pending_llm_requests:
-                        request_info = self.pending_llm_requests[recalled_message_id]
-                        request_info["cancelled"] = True
+                recalled_message_id = str(message_id)
+                self.recalled_messages.add(recalled_message_id)
+                logger.info(f"检测到消息撤回: {recalled_message_id}")
 
-                        # 尝试停止相关事件
-                        if "event" in request_info:
-                            request_info["event"].stop_event()
+                # 检查是否有对应的LLM请求正在处理
+                if recalled_message_id in self.pending_llm_requests:
+                    request_info = self.pending_llm_requests[recalled_message_id]
+                    request_info["cancelled"] = True
 
-                        logger.info(f"已取消对应的LLM回复: {recalled_message_id}")
-                    else:
-                        logger.debug(
-                            f"撤回的消息 {recalled_message_id} 没有对应的LLM请求"
-                        )
+                    # 尝试停止相关事件
+                    if "event" in request_info:
+                        request_info["event"].stop_event()
 
-                    # 阻止此撤回事件继续传播
-                    event.stop_event()
+                    logger.info(f"已取消对应的LLM回复: {recalled_message_id}")
+                else:
+                    logger.debug(f"撤回的消息 {recalled_message_id} 没有对应的LLM请求")
+
+                # 阻止此撤回事件继续传播
+                event.stop_event()
         except (KeyError, TypeError, AttributeError):
             # 不是撤回事件，忽略
             pass
