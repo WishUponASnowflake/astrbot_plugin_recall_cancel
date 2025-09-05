@@ -52,7 +52,7 @@ class RecallCancelPlugin(Star):
         """跟踪LLM响应完成"""
         message_id = event.message_obj.message_id
         if message_id in self.pending_llm_requests:
-            # 检查是否已被撤回
+            # 检查是否已被撤回信息
             if self.pending_llm_requests[message_id].get("cancelled", False):
                 logger.info(f"LLM响应已被撤回取消: {message_id}")
                 event.stop_event()  # 阻止后续发送
